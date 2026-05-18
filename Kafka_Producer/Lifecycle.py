@@ -1,0 +1,12 @@
+from Config import EVENT_FLOW
+
+
+def get_stage(step):
+    """
+    Safe lifecycle progression
+    """
+
+    if step >= len(EVENT_FLOW):
+        return None
+
+    return EVENT_FLOW[step]
