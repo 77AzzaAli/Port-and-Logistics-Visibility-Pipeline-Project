@@ -1,0 +1,121 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - data_pipeline
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - data_pipeline
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8083:8080"
+    networks:
+      - data_pipeline
+
+  spark-master:
+    image: apache/spark:3.4.4-python3
+    container_name: spark-master
+    ports:
+      - "9090:8080"
+      - "7077:7077"
+    environment:
+      SPARK_MODE: master
+      SPARK_MASTER_HOST: spark-master
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - "/mnt/d/My Capstone Project/Docker Image/data:/mnt/data"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.master.Master
+      --host spark-master
+      --port 7077
+      --webui-port 8080
+    networks:
+      - data_pipeline
+
+  spark-worker:
+    image: apache/spark:3.4.4-python3
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - "9091:8081"
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ./scripts:/opt/spark/scripts
+      - "/mnt/d/My Capstone Project/Docker Image/data:/mnt/data"
+    command: >
+      /opt/spark/bin/spark-class
+      org.apache.spark.deploy.worker.Worker
+      spark://spark-master:7077
+    networks:
+      - data_pipeline
+
+  kafka-producer:
+    image: python:3.9-slim
+    container_name: kafka-producer
+    depends_on:
+      - kafka
+    working_dir: /app
+    volumes:
+      - ./scripts:/app
+    command: sh -c "pip install --no-cache-dir kafka-python && tail -f /dev/null"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - data_pipeline
+
+  streamlit-dashboard:
+    image: python:3.9-slim
+    container_name: streamlit-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./Dashboard:/app
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - data_pipeline
+    command: >
+      sh -c "pip install --no-cache-dir streamlit psycopg2-binary &&
+             streamlit run app.py
+             --server.address=0.0.0.0
+             --server.port=8501
+             --server.fileWatcherType=none"
+
+networks:
+  data_pipeline:
+    driver: bridge
+
+volumes:
+  postgres_data:
